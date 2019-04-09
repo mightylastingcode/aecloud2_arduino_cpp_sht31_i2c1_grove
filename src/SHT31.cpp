@@ -31,6 +31,20 @@ THE SOFTWARE.
 #include "WIRE.h"
 #include "Arduino.h"
 
+// -------------------------------
+// Added by Michael (to
+// -------------------------------
+#include "SERIAL1.h"
+extern SERIAL1 Serial;   //UART 1 Serial communication
+
+
+#define  POLYBYTE  0x31  // SHT31 sensor
+
+#define  CRC_INITIAL 0xFF
+#define  CRC_FINALXOR 0x00
+unsigned char gen_crc(unsigned char *array, int len);
+// -------------------------------
+
 // use this declaration for this i2c device that owns the i2c port exclusively
 //WIRE1 Wire = WIRE1(); // grove ic21 header
 //WIRE Wire = WIRE();
@@ -38,6 +52,11 @@ THE SOFTWARE.
 // use this declaration for two i2c devices that share the same i2c port.
 extern  WIRE1 Wire;  // grove i2c port
 //extern WIRE Wire;  // Arduino header port ADC4/ADC5
+
+
+
+
+
 
 SHT31::SHT31() {
 }
@@ -106,6 +125,46 @@ boolean SHT31::getTempHum(void) {
   for (uint8_t i=0; i<6; i++) {
     readbuffer[i] = Wire.read();
   }
+
+  // -------------------------------
+  // Added by Michael
+  // -------------------------------
+  // Temp MSB, Temp LSB, Temp CRC
+  // HUMD MSB, HUMD LSB, HUMD CRC
+  unsigned char crc = 0;
+
+  Serial.print("Temperature Data read with CRC8:");
+  for (uint8_t i=0; i<3; i++) {
+      Serial.print(readbuffer[i],HEX);
+      Serial.print(" ");
+  }
+  Serial.println(" ");
+
+  crc = gen_crc(readbuffer,2);
+  Serial.print("Calculated Temperature CRC:");
+  Serial.print(crc,HEX);
+
+  if (crc == readbuffer[2])
+      Serial.println(" [Pass matched CRC]");
+  else
+      Serial.println(" [Fail mismatched CRC]");
+
+  Serial.print("Humitity Data read with CRC8:");
+  for (uint8_t i=3; i<6; i++) {
+      Serial.print(readbuffer[i],HEX);
+      Serial.print(" ");
+  }
+  Serial.println(" ");
+
+  crc = gen_crc(readbuffer+3,2);
+  Serial.print("Calculated Humidity CRC:");
+  Serial.print(crc,HEX);
+  if (crc == readbuffer[5])
+      Serial.println(" [Pass matched CRC]");
+  else
+      Serial.println(" [Fail mismatched CRC]");
+  Serial.println(" ");
+  // -------------------------------
   uint16_t ST, SRH;
   ST = readbuffer[0];
   ST <<= 8;
@@ -139,4 +198,29 @@ void SHT31::writeCommand(uint16_t cmd) {
   Wire.write(cmd >> 8);
   Wire.write(cmd & 0xFF);
   Wire.endTransmission();      
+}
+
+
+// This function is to process a single data byte and generate an
+// eight bit CRC checksum.
+//
+// Input: Databyte
+// Return: CRC byte
+//
+unsigned char gen_crc(unsigned char *array, int len) {
+
+    unsigned char crc = CRC_INITIAL;
+
+    for (int index=0; index < len; index++) {
+        crc = crc ^ array[index];
+        for (int i=0; i<8; i++) {
+            if ((crc & 0x80) != 0) {     // Detect '1' in the MSb position
+                crc = (crc << 1) ^ POLYBYTE;  // shift in a padding zero and shift the MSb '1' bit
+            } else {
+                crc = (crc << 1);
+            }
+            //printf("i = %d \tcrc = %2X  \n",i, (crc & 0xFF));
+        }
+    }
+    return crc ^ CRC_FINALXOR;
 }
